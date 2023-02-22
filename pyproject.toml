@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfindtool"
+version = "0.11"
+authors = [
+    {name = "maxpat78", email = "maxpat78@yahoo.it"},
+]
+description = "tool to search a directory tree for files matching some criteria, in a way similar to GNU find"
+readme = "README.MD"
+requires-python = ">=3.0"
+keywords = ["find", "search","filesystem"]
+license = {text = "Public Domain"}
+classifiers = [
+    'Programming Language :: Python :: 3',
+    'Intended Audience :: Developers',
+    'Intended Audience :: System Administrators',
+    'License :: Public Domain',
+    'Operating System :: Microsoft :: Windows',
+    'Operating System :: POSIX :: Linux',
+    'Topic :: System :: Filesystems'
+]
+
+[project.urls]
+homepage = "https://github.com/maxpat78/PyFind"
+repository = "https://github.com/maxpat78/PyFind.git"

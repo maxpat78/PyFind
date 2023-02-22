@@ -1,5 +1,5 @@
 """
-PyFind.py 0.1
+pyfind.py 0.11
 
 This module provides a simple tool to search a directory tree for files
 matching some criteria, in a way similar to GNU find.
@@ -8,12 +8,12 @@ However, not all find switches are implemented, most noticeably it lacks
 sym/hard links stuff.
 
 A sample:
-	from PyFind import Find
+	from pyfind import Search
 	
 	# Finds all files greater than 1 MiB, created in the last 25 minutes,
 	# whose name ends in '.py'
-	for found in Find('.', '-size +1m -a -cmin -25 -a -name *.py').find():
-		print found
+	for found in Search('.', '-size +1m -a -cmin -25 -a -name *.py').find():
+		print (found)
 		
 Also, it provides some extension switches: -Xdate and -Xhour, to test date
 and times in a more user-friendly way (and better than -xnewerXY).
@@ -28,14 +28,9 @@ TODO:
               (i.e. top=..\..\somedir, cur=somedir, wd=..\..\anotherdir)
 """
 
-import datetime
-import fnmatch
+import sys, datetime, fnmatch, os, operator, re, shlex, time, functools
 import logging
-import os
-import operator
-import re
-import shlex
-import time
+import argparse
 
 
 # Sort types
@@ -61,16 +56,16 @@ Evaluable = [
 # b means 512 bytes blocks; c means bytes (implicit); w means 16-bit words; k,m,g,t --> KiB, MiB, GiB, TiB
 ('-size', 1, '([+=-]*)([0-9.]+)([bcwkmgt]*)', 'p._size("\\1",\\2,"\\3")'),
 
-# -adate +1.9.2012, -mdate -01/01/12 etc.  A Pythonic extension. (dd/mm/00 ... dd/mm/70 --> 2000...2070)
+# -adate +1.9.2012, -mdate -01/01/12 etc. A Pythonic extension. (dd/mm/00 ... dd/mm/70 --> 2000...2070)
 ('-([acm])date', 1, '([+=-]*)([0-9]{1,2})[./]([0-9]{1,2})[./]([0-9]{2,4})', 'p._date("\\1","\\2",\\3,\\4,\\5)'),
 
-# -chour +13:10, -mhour -6.00 etc.  A Pythonic extension.
+# -chour +13:10, -mhour -6.00 etc. A Pythonic extension.
 ('-([acm])hour', 1, '([+=-]*)([0-9]{1,2})[:.]([0-9]{1,2})', 'p._hour("\\1","\\2",\\3,\\4)'),
 
-# -ctime +2, -mtime -6.5 etc.  Times in 24-hours intervals ago (Unix style)
+# -ctime +2, -mtime -6.5 etc. Times in 24-hours intervals ago (Unix style)
 ('-([acm])time', 1, '([+=-]*)([0-9]+[.0-9]*)', 'p._time("\\1","\\2",\\3)'),
 
-# -cmin +2, -mmin -6 etc.  Times in minutes ago (Unix style)
+# -cmin +2, -mmin -6 etc. Times in minutes ago (Unix style)
 ('-([acm])min', 1, '([+=-]*)([0-9.]+)', 'p._time_min("\\1","\\2",\\3)'),
 
 # -mnewer file.ext, etc.
@@ -98,18 +93,27 @@ Evaluable = [
 ('-type', 1, '([df])', 'p._type("\\1")'),
 ]
 
-class Find:
+
+
+def cmp(a, b):
+	"Provides old Python 2 cmp function"
+	return (a > b) - (a < b) 
+
+
+
+class Search:
 	def __init__(p, root='.', expr=None):
-		p.dirs     = [unicode(root)]  # list of dirs to search (default: current dir)
+		p.DEBUG    = False   # wether to print debug infos
+		p.dirs     = [root]  # list of dirs to search (default: current dir)
 		p.names    = ['*']   # list of filenames to search for, wildcards allowed (default: all)
 		p.excludes = None    # list of filenames to exclude (default: none)
 		p.mindepth = -1      # min recursion depth from initial position
 		p.maxdepth = -1      # max recursion depth from initial position
 		p.eval     = None    # GNU find-style expression
-		p.NOW      = datetime.datetime.now()
+		p.NOW      = datetime.datetime.now() # search start time
 
 		p.eval = []
-		logging.debug('Splitted expr: %s', shlex.split(expr))
+		if p.DEBUG: logging.debug('Splitted expr: %s', shlex.split(expr))
 		args = iter(shlex.split(expr))
 		for switch in args:
 			ok = 0
@@ -118,24 +122,24 @@ class Find:
 					ok = 1
 					arg = ''
 					if e[1]:
-						arg = args.next()
+						arg = next(args)
 						if not re.match(e[2], arg):
 							raise SyntaxError("Wrong argument '%s' for switch '%s'!" % (arg, switch))
-					logging.debug('switch="%s" arg="%s"', switch, arg)
+					if p.DEBUG: logging.debug('switch="%s" arg="%s"', switch, arg)
 					#~ print 'groups=', re.match(' '.join((e[0],e[2])), ' '.join((switch,arg))).groups()
 					p.eval += [re.sub(''.join((e[0],e[2])), e[3], ''.join((switch,arg)))]
 			if not ok:
 				if switch == '-daystart':
-					p.NOW=datetime.datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
+					p.NOW = p.NOW.replace(hour=0,minute=0,second=0,microsecond=0)
 				else:
 					raise SyntaxError("Wrong switch '%s'!" % switch)
-		logging.debug("Parsed expr: %s", p.eval)
+		if p.DEBUG: logging.debug("Parsed expr: %s", p.eval)
 		for subst in ('p.mindepth', 'p.maxdepth'):
 			for item in p.eval:
 				if subst in item:
 					exec(item) # immediately alters the instance and deletes
 					del p.eval[p.eval.index(item)]
-		logging.debug("Subst expr: %s", p.eval)
+		if p.DEBUG: logging.debug("Subst expr: %s", p.eval)
 		p.eval = ' '.join(p.eval)
 
 	def find(p, with_stat=False):
@@ -147,10 +151,10 @@ class Find:
 			for root, dirs, files in os.walk(top):
 				# However, os.walk() pre-scans the full tree...
 				if p.maxdepth > -1 and depth(top, root) > p.maxdepth:
-					logging.debug("Skipping '%s', depth=%d>%d", root, depth(top, root), p.maxdepth)
+					if p.DEBUG: logging.debug("Skipping '%s', depth=%d>%d", root, depth(top, root), p.maxdepth)
 					continue
 				if p.mindepth > -1 and depth(top, root) < p.mindepth:
-					logging.debug("Skipping '%s', depth=%d<%d", root, depth(top, root), p.mindepth)
+					if p.DEBUG: logging.debug("Skipping '%s', depth=%d<%d", root, depth(top, root), p.mindepth)
 					continue
 				for item in files:
 					pn = os.path.join(root, item)
@@ -206,8 +210,7 @@ class Find:
 			raise SyntaxError("You can sort only a dictionary {pathname: stat} returned by findall()!")
 		found = result.items()
 		p.sort_by = sort_by
-		found.sort(p._sortcmp)
-		return found
+		return sorted(found, key=functools.cmp_to_key(p._sortcmp))
 
 	def _op(p, op):
 		try:
@@ -257,7 +260,7 @@ class Find:
 			return 1
 		p.PathName = s # current pathname to test
 		p.ST = os.stat(s) # its stats
-		#~ logging.debug("evaluating '%s' for '%s', STAT='%s'", p.eval, s, p.ST)
+		if p.DEBUG: logging.debug("evaluating '%s' for '%s', STAT='%s'", p.eval, s, p.ST)
 		return eval(p.eval)
 
 	def _size(p, op, n, m):
@@ -275,6 +278,7 @@ class Find:
 		elif 70 < yy < 99:
 			yy += 1900
 		T2 = datetime.date(yy, mm, dd)
+		if p.DEBUG: logging.debug("-%cdate %s on %s and %s)",typ,OP,T1,T2)
 		return OP(T1, T2)
 
 	def _time(p, typ, op, n):
@@ -282,14 +286,15 @@ class Find:
 		OP = p._op(op)
 		T1 = datetime.datetime(T.tm_year, T.tm_mon, T.tm_mday, T.tm_hour, T.tm_min, T.tm_sec)
 		T2 = datetime.timedelta(hours=24*n)
-		#~ print "%s on (%s-%s) and %s" % (OP,p.NOW,T1,T2)
+		if p.DEBUG: logging.debug("-%ctime %s on (%s - %s = %s) and %s = %s",typ,OP,p.NOW,T1,p.NOW-T1,T2,OP(p.NOW-T1, T2))
 		return OP(p.NOW-T1, T2)
 
 	def _hour(p, typ, op, hh, mm):
 		T = time.localtime(p.ST[-1-['c','m','a'].index(typ)])
 		OP = p._op(op)
-		T1 = datetime.time(T.tm_hour, T.tm_min, T.tm_sec)
+		T1 = datetime.time(T.tm_hour, T.tm_min, 0)
 		T2 = datetime.time(hh, mm, 0)
+		if p.DEBUG: logging.debug("-%chour %s on %s and %s)",typ,OP,T1,T2)
 		return OP(T1, T2)
 
 	def _time_min(p, typ, op, mm):
@@ -297,6 +302,7 @@ class Find:
 		OP = p._op(op)
 		T1 = datetime.datetime(T.tm_year, T.tm_mon, T.tm_mday, T.tm_hour, T.tm_min, T.tm_sec)
 		T2 = datetime.timedelta(minutes=mm)
+		if p.DEBUG: logging.debug("-%cmin %s on (%s - %s = %s) and %s = %s",typ,OP,p.NOW,T1,p.NOW-T1,T2,OP(p.NOW-T1, T2))
 		return OP(p.NOW-T1, T2)
 
 	def _newer(p, typ, name):
@@ -306,12 +312,66 @@ class Find:
 
 
 if __name__ == '__main__':
-	logging.basicConfig(level=logging.DEBUG, filename='PyFind_Debug.log', filemode='w')
-	expr = r"-name * -a -mtime -3 -maxdepth 0"
-	x = Find(r'C:\Users\maxpat78\Downloads', expr) # inits a new search object
-
-	#~ for a in x.find():
-		#~ print a
+	#~ logging.basicConfig(level=logging.DEBUG, filename='pyfind_debug.log', filemode='w')
 	
-	for pn, st in x.sortall(x.findall(1), (SORT_EXT,SORT_MTIME)):
-		print pn
+	if len(sys.argv) == 1:
+		root, expr = '.', ''
+	elif len(sys.argv) == 2:
+		if sys.argv[1] == '-h':
+			print("""Searches for files and directories in a way similar to GNU find.
+
+Syntax: pyfind [root] [expression]
+
+'root' is the path to start the search from
+
+'expression' is one or more switches to refine search (please note that '+' means 'greater than', '-' means 'less than' and '=' means 'equal to' (and is implicit):
+
+ -size [+-=] <n>[bcwkmgt]
+ selects files with a given size ('b' is a 512 bytes sector, 'c' is character and is implicit and equivalent to byte, 'w' means 16-bit word, 'k' is kibibyte, 'm' is mebibyte, 'g' is gibibyte and 't' is tebibyte)
+
+ -adate | -cdate | -mdate [+-=] dd/mm/yy
+ selects objects with a given access, creation or modification date
+ 
+ -ahour | -chour | -mhour [+-=] <hh:mm> or <hh.mm>
+ selects objects with a given access, creation or modification hour and minute
+
+ -atime | -ctime | -mtime [+-=] <nn>
+ selects objects with a given access, creation or modification time, expressed as 24-hour intervals (Unix-like)
+ 
+ -amin | -cmin | -mmin  [+-=] <mm>
+ selects objects with a given access, creation or modification time, expressed in minutes (Unix-like)
+ 
+ -anewer | -cnewer | -mnewer <file>
+ selects objects newer than a given file
+ 
+ -mindepth | -maxdepth <n>
+ selects objects whose depth is at least/most <n> in respect of 'root'
+ 
+ -name | -iname <glob>
+ selects all file names matching a <glob> expression, in a case sensitive or insensitive manner
+
+ -path | -ipath <glob>
+ -wholename | -iwholename <glob>
+ selects all path names matching a <glob> expression, in a case sensitive or insensitive manner
+
+ -regex | -iregex <regex>
+ selects all path names matching a given regular expression, in a case sensitive or insensitive manner
+ 
+ -daystart
+ all time-relative computations are from the start of this day (and not from this moment)
+ 
+ -type <d> | <f>
+ selects objects whose type is directory or file
+
+Moreover, switches can be combined with -and, -or, -not, -true and -false operators.""")
+			sys.exit(1)
+		root, expr = sys.argv[1], ''
+	else:
+		root, expr = sys.argv[1], ' '.join(sys.argv[2:])
+		
+	if not os.path.isdir(root):
+		print("pyfind error: first argument, if provided, must be a directory!")
+		sys.exit(1)
+
+	for o in Search(root, expr).findall():
+		print(o)
