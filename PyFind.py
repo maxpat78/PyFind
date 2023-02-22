@@ -1,5 +1,5 @@
 """
-pyfind.py 0.11
+pyfind.py 0.12
 
 This module provides a simple tool to search a directory tree for files
 matching some criteria, in a way similar to GNU find.
@@ -261,7 +261,12 @@ class Search:
 		p.PathName = s # current pathname to test
 		p.ST = os.stat(s) # its stats
 		if p.DEBUG: logging.debug("evaluating '%s' for '%s', STAT='%s'", p.eval, s, p.ST)
-		return eval(p.eval)
+		try:
+			res = eval(p.eval)
+		except SyntaxError:
+			print("'%s': bad expression! Did you forget -and/-or operators on command line, perhaps?"%p.eval)
+			sys.exit(1)
+		return res
 
 	def _size(p, op, n, m):
 		S = p.ST.st_size
@@ -312,8 +317,6 @@ class Search:
 
 
 if __name__ == '__main__':
-	#~ logging.basicConfig(level=logging.DEBUG, filename='pyfind_debug.log', filemode='w')
-	
 	if len(sys.argv) == 1:
 		root, expr = '.', ''
 	elif len(sys.argv) == 2:
