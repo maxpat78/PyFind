@@ -1,5 +1,5 @@
 """
-pyfind.py 0.12
+pyfind.py 0.13
 
 This module provides a simple tool to search a directory tree for files
 matching some criteria, in a way similar to GNU find.
@@ -11,8 +11,8 @@ A sample:
 	from pyfind import Search
 	
 	# Finds all files greater than 1 MiB, created in the last 25 minutes,
-	# whose name ends in '.py'
-	for found in Search('.', '-size +1m -a -cmin -25 -a -name *.py').find():
+	# whose name ends in '.py' or '.pyc'
+	for found in Search('.', '-size +1m -a -cmin -25 -a ( -name *.py -or -name *.pyc )').find():
 		print (found)
 		
 Also, it provides some extension switches: -Xdate and -Xhour, to test date
@@ -128,6 +128,15 @@ class Search:
 					if p.DEBUG: logging.debug('switch="%s" arg="%s"', switch, arg)
 					#~ print 'groups=', re.match(' '.join((e[0],e[2])), ' '.join((switch,arg))).groups()
 					p.eval += [re.sub(''.join((e[0],e[2])), e[3], ''.join((switch,arg)))]
+			if switch in ('(',')'):
+				ok = 1
+				p.eval += [switch]
+			booleans = ('and','or','not','true','false')
+			if len(p.eval) > 1 and \
+			p.eval[-1] not in booleans and p.eval[-2] not in booleans and \
+			p.eval[-2] != '(' and p.eval[-1] != ')' :
+				if p.DEBUG: logging.debug("implicit: %s *AND* %s", p.eval[-2], p.eval[-1])
+				p.eval.insert(-1, "and")
 			if not ok:
 				if switch == '-daystart':
 					p.NOW = p.NOW.replace(hour=0,minute=0,second=0,microsecond=0)
@@ -317,6 +326,7 @@ class Search:
 
 
 if __name__ == '__main__':
+	#~ logging.basicConfig(level=logging.DEBUG, filename='pyfind_debug.log', filemode='w')
 	if len(sys.argv) == 1:
 		root, expr = '.', ''
 	elif len(sys.argv) == 2:
@@ -366,7 +376,12 @@ Syntax: pyfind [root] [expression]
  -type <d> | <f>
  selects objects whose type is directory or file
 
-Moreover, switches can be combined with -and, -or, -not, -true and -false operators.""")
+Moreover, switches can be combined with -and, -or, -not, -true and -false operators.
+
+Example:
+pyfind . -size +1m -a -cmin -25 -a ( -name *.py -or -name *.pyc )
+searches for all .py and .pyc files >1M created in the last 25 minutes (note
+the space after and before the round brackets: it is mandatory!)""")
 			sys.exit(1)
 		root, expr = sys.argv[1], ''
 	else:
