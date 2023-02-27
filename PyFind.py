@@ -1,5 +1,5 @@
 """
-pyfind.py 0.13
+pyfind.py 0.14
 
 This module provides a simple tool to search a directory tree for files
 matching some criteria, in a way similar to GNU find.
@@ -19,8 +19,9 @@ Also, it provides some extension switches: -Xdate and -Xhour, to test date
 and times in a more user-friendly way (and better than -xnewerXY).
 
 TODO:
+- use curdir if no args
+- multiple dirs-ops like GNU find
 - check -a -anewer regex for strange duplication?
-- -xtime 0 means "less than 24-hrs ago"
 - -used?
 - -newerXY?
 - -prune?
@@ -110,7 +111,7 @@ class Search:
 		p.mindepth = -1      # min recursion depth from initial position
 		p.maxdepth = -1      # max recursion depth from initial position
 		p.eval     = None    # GNU find-style expression
-		p.NOW      = datetime.datetime.now() # search start time
+		p.NOW      = datetime.datetime.now().replace(microsecond=0) # search start time
 
 		p.eval = []
 		if p.DEBUG: logging.debug('Splitted expr: %s', shlex.split(expr))
@@ -298,10 +299,10 @@ class Search:
 	def _time(p, typ, op, n):
 		T = time.localtime(p.ST[-1-['c','m','a'].index(typ)])
 		OP = p._op(op)
-		T1 = datetime.datetime(T.tm_year, T.tm_mon, T.tm_mday, T.tm_hour, T.tm_min, T.tm_sec)
+		T1 = datetime.datetime(T.tm_year, T.tm_mon, T.tm_mday)
 		T2 = datetime.timedelta(hours=24*n)
 		if p.DEBUG: logging.debug("-%ctime %s on (%s - %s = %s) and %s = %s",typ,OP,p.NOW,T1,p.NOW-T1,T2,OP(p.NOW-T1, T2))
-		return OP(p.NOW-T1, T2)
+		return OP(p.NOW.replace(hour=0,minute=0,second=0)-T1, T2)
 
 	def _hour(p, typ, op, hh, mm):
 		T = time.localtime(p.ST[-1-['c','m','a'].index(typ)])
@@ -391,5 +392,5 @@ the space after and before the round brackets: it is mandatory!)""")
 		print("pyfind error: first argument, if provided, must be a directory!")
 		sys.exit(1)
 
-	for o in Search(root, expr).findall():
+	for o in Search(root, expr).find():
 		print(o)

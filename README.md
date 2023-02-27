@@ -8,13 +8,12 @@ It works both from command line and as a module.
 
 A sample:
 ```
-
 	from pyfind import Search
 	
 	# Finds all files greater than 1 MiB, created in the last 25 minutes,
-	# whose name ends in '.py'
-	for found in Find('.', '-size +1m -a -cmin -25 -a -name *.py').find():
-		print found
+	# whose name ends in '.py' or '.pyc'
+	for found in Search('.', '-size +1m -a -cmin -25 -a ( -name *.py -or -name *.pyc )').find():
+		print (found)
 ```
 		
 Also, it provides some extension switches: -Xdate and -Xhour, to test date
