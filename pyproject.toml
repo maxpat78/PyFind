@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyfindtool"
-version = "0.14"
+version = "0.20"
 authors = [
     {name = "maxpat78", email = "maxpat78@yahoo.it"},
 ]
